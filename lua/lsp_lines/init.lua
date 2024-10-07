@@ -2,34 +2,6 @@ local M = {}
 
 local render = require("lsp_lines.render")
 
----@private
-local function to_severity(severity)
-    if type(severity) == "string" then
-        return assert(M.severity[string.upper(severity)], string.format("Invalid severity: %s", severity))
-    end
-    return severity
-end
-
-local function filter_by_severity(severity, diagnostics)
-    if not severity then
-        return diagnostics
-    end
-
-    if type(severity) ~= "table" then
-        severity = to_severity(severity)
-        return vim.tbl_filter(function(t)
-            return t.severity == severity
-        end, diagnostics)
-    end
-
-    local min_severity = M.severity.WARN
-    local max_severity = M.severity.ERROR
-
-    return vim.tbl_filter(function(t)
-        return t.severity <= min_severity and t.severity >= max_severity
-    end, diagnostics)
-end
-
 local function render_current_line(diagnostics, ns, bufnr, opts)
     local current_line_diag = {}
     local lnum = vim.api.nvim_win_get_cursor(0)[1] - 1
@@ -45,6 +17,13 @@ local function render_current_line(diagnostics, ns, bufnr, opts)
     render.show(ns, bufnr, current_line_diag, opts)
 end
 
+---@class Opts
+---@field virtual_lines OptsVirtualLines Options for lsp_lines plugin
+
+---@class OptsVirtualLines
+---@field only_current_line boolean Only render for current line
+---@field highlight_whole_line boolean Highlight empty space to the left of a diagnostic
+
 -- Registers a wrapper-handler to render lsp lines.
 -- This should usually only be called once, during initialisation.
 M.setup = function()
@@ -54,19 +33,8 @@ M.setup = function()
         ---@param namespace number
         ---@param bufnr number
         ---@param diagnostics table
-        ---@param opts boolean
+        ---@param opts boolean|Opts
         show = function(namespace, bufnr, diagnostics, opts)
-            opts = opts or {}
-            local severity
-            if opts.virtual_lines then
-                if opts.virtual_lines.severity then
-                    severity = opts.virtual_lines.severity
-                end
-            end
-            if severity then
-                diagnostics = filter_by_severity(severity, diagnostics)
-            end
-
             local ns = vim.diagnostic.get_namespace(namespace)
             if not ns.user_data.virt_lines_ns then
                 ns.user_data.virt_lines_ns = vim.api.nvim_create_namespace("")
@@ -99,14 +67,12 @@ M.setup = function()
     }
 end
 
-local toggle_value = false
-
 ---@return boolean
 M.toggle = function()
-    local new_value = toggle_value
-    toggle_value = vim.diagnostic.config().virtual_lines
+    local new_value = not vim.diagnostic.config().virtual_lines
     vim.diagnostic.config({ virtual_lines = new_value })
     return new_value
 end
 
 return M
+

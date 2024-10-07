@@ -23,34 +23,34 @@ local BLANK = "blank"
 
 ---Returns the distance between two columns in cells.
 ---
----Some characters (like tabs) take up more than one cell. A diagnostic aligned
+---Some characters (like tabs) take up more than one cell.
+---Additionally, inline virtual text can make the distance between two columns larger.
+---A diagnostic aligned
 ---under such characters needs to account for that and add that many spaces to
 ---its left.
 ---
 ---@return integer
 local function distance_between_cols(bufnr, lnum, start_col, end_col)
-    local lines = vim.api.nvim_buf_get_lines(bufnr, lnum, lnum + 1, false)
-    if vim.tbl_isempty(lines) then
-        -- This can only happen is the line is somehow gone or out-of-bounds.
-        return 1
-    end
-
-    local sub = string.sub(lines[1], start_col, end_col)
-    return vim.fn.strdisplaywidth(sub, 0) -- these are indexed starting at 0
+    return vim.api.nvim_buf_call(bufnr, function()
+        local s = vim.fn.virtcol({ lnum + 1, start_col })
+        local e = vim.fn.virtcol({ lnum + 1, end_col + 1 })
+        return e - 1 - s
+    end)
 end
 
 ---@param namespace number
 ---@param bufnr number
 ---@param diagnostics table
----@param opts boolean
+---@param opts boolean|Opts
 ---@param source 'native'|'coc'|nil If nil, defaults to 'native'.
 function M.show(namespace, bufnr, diagnostics, opts, source)
+    if not vim.api.nvim_buf_is_loaded(bufnr) then return end
     vim.validate({
         namespace = { namespace, "n" },
         bufnr = { bufnr, "n" },
         diagnostics = {
             diagnostics,
-            vim.tbl_islist,
+            vim.islist or vim.tbl_islist,
             "a list of diagnostics",
         },
         opts = { opts, "t", true },
@@ -117,6 +117,12 @@ function M.show(namespace, bufnr, diagnostics, opts, source)
         for i = #lelements, 1, -1 do -- last element goes on top
             if lelements[i][1] == DIAGNOSTIC then
                 local diagnostic = lelements[i][2]
+                local empty_space_hi
+                if opts.virtual_lines and opts.virtual_lines.highlight_whole_line == false then
+                    empty_space_hi = ""
+                else
+                    empty_space_hi = highlight_groups[diagnostic.severity]
+                end
 
                 local left = {}
                 local overlap = false
@@ -128,7 +134,7 @@ function M.show(namespace, bufnr, diagnostics, opts, source)
                     local data = lelements[j][2]
                     if type == SPACE then
                         if multi == 0 then
-                            table.insert(left, { data, "" })
+                            table.insert(left, { data, empty_space_hi })
                         else
                             table.insert(left, { string.rep("─", data:len()), highlight_groups[diagnostic.severity] })
                         end
@@ -171,7 +177,13 @@ function M.show(namespace, bufnr, diagnostics, opts, source)
                 -- c. Is just one line.
                 -- d. Is not an overlap.
 
-                for msg_line in diagnostic.message:gmatch("([^\n]+)") do
+                local msg
+                if diagnostic.code then
+                    msg = string.format("%s: %s", diagnostic.code, diagnostic.message)
+                else
+                    msg = diagnostic.message
+                end
+                for msg_line in msg:gmatch("([^\n]+)") do
                     local vline = {}
                     vim.list_extend(vline, left)
                     vim.list_extend(vline, center)
@@ -181,9 +193,9 @@ function M.show(namespace, bufnr, diagnostics, opts, source)
 
                     -- Special-case for continuation lines:
                     if overlap then
-                        center = { { "│", highlight_groups[diagnostic.severity] }, { "     ", "" } }
+                        center = { { "│", highlight_groups[diagnostic.severity] }, { "     ", empty_space_hi } }
                     else
-                        center = { { "      ", "" } }
+                        center = { { "      ", empty_space_hi } }
                     end
                 end
             end
