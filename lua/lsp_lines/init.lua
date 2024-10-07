@@ -22,8 +22,8 @@ local function filter_by_severity(severity, diagnostics)
         end, diagnostics)
     end
 
-    local min_severity = to_severity(severity.min) or M.severity.WARN
-    local max_severity = to_severity(severity.max) or M.severity.ERROR
+    local min_severity = M.severity.WARN
+    local max_severity = M.severity.ERROR
 
     return vim.tbl_filter(function(t)
         return t.severity <= min_severity and t.severity >= max_severity
